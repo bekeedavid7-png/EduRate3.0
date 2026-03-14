@@ -7,6 +7,9 @@ import { z } from "zod";
 import { courses } from "@shared/schema";
 import { db } from "./db";
 import passport from "passport";
+import crypto from "crypto";
+import { sendVerificationEmail, sendPasswordResetEmail } from "./email";
+import { forgotPasswordSchema, resetPasswordSchema } from "@shared/schema";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -14,6 +17,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   const { hashPassword } = setupAuth(app);
 
+  // === REGISTER ===
   app.post(api.auth.register.path, async (req, res, next) => {
     try {
       const existingUser = await storage.getUserByUsername(req.body.username);
@@ -21,17 +25,35 @@ export async function registerRoutes(
         return res.status(400).send({ message: "Username already exists" });
       }
 
+      if (req.body.email) {
+        const existingEmail = await storage.getUserByEmail(req.body.email);
+        if (existingEmail) {
+          return res.status(400).json({ message: "An account with this email already exists" });
+        }
+      }
+
       const input = api.auth.register.input.parse(req.body);
       const hashedPassword = await hashPassword(input.password);
+      const verificationToken = crypto.randomBytes(32).toString("hex");
+
       const user = await storage.createUser({
         ...input,
         password: hashedPassword,
+        email: input.email || "",
+        emailVerified: false,
+        verificationToken,
+        resetPasswordToken: null,
+        resetPasswordExpiry: null,
       });
+
+      if (user.email) {
+        sendVerificationEmail(user.email, verificationToken, user.name).catch(console.error);
+      }
 
       req.login(user, (err) => {
         if (err) return next(err);
-        const { password, ...userWithoutPassword } = user;
-        res.status(201).json(userWithoutPassword);
+        const { password, verificationToken: vt, resetPasswordToken, resetPasswordExpiry, ...safe } = user;
+        res.status(201).json(safe);
       });
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -41,18 +63,20 @@ export async function registerRoutes(
     }
   });
 
+  // === LOGIN ===
   app.post(api.auth.login.path, (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) return res.status(401).json({ message: "Invalid credentials" });
       req.login(user, (err: any) => {
         if (err) return next(err);
-        const { password, ...userWithoutPassword } = user;
-        res.json(userWithoutPassword);
+        const { password, verificationToken, resetPasswordToken, resetPasswordExpiry, ...safe } = user;
+        res.json(safe);
       });
     })(req, res, next);
   });
 
+  // === LOGOUT ===
   app.post(api.auth.logout.path, (req, res, next) => {
     req.logout((err) => {
       if (err) return next(err);
@@ -60,24 +84,94 @@ export async function registerRoutes(
     });
   });
 
+  // === ME ===
   app.get(api.auth.me.path, (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const { password, ...userWithoutPassword } = req.user as any;
-    res.json(userWithoutPassword);
+    const { password, verificationToken, resetPasswordToken, resetPasswordExpiry, ...safe } = req.user as any;
+    res.json(safe);
   });
 
+  // === VERIFY EMAIL ===
+  app.get("/api/auth/verify-email/:token", async (req, res) => {
+    try {
+      const user = await storage.getUserByVerificationToken(req.params.token);
+      if (!user) {
+        return res.status(400).json({ message: "Invalid or expired verification link" });
+      }
+      await storage.updateUser(user.id, {
+        emailVerified: true,
+        verificationToken: null,
+      });
+      res.json({ message: "Email verified successfully" });
+    } catch (err) {
+      res.status(500).json({ message: "Verification failed" });
+    }
+  });
+
+  // === FORGOT PASSWORD ===
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const { email } = forgotPasswordSchema.parse(req.body);
+      const user = await storage.getUserByEmail(email);
+      // Always respond with success to prevent email enumeration
+      if (!user) {
+        return res.json({ message: "If that email exists, a reset link has been sent." });
+      }
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      await storage.updateUser(user.id, {
+        resetPasswordToken: token,
+        resetPasswordExpiry: expiry,
+      });
+      sendPasswordResetEmail(user.email, token, user.name).catch(console.error);
+      res.json({ message: "If that email exists, a reset link has been sent." });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: "Something went wrong" });
+    }
+  });
+
+  // === RESET PASSWORD ===
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { token, password } = resetPasswordSchema.parse(req.body);
+      const user = await storage.getUserByResetToken(token);
+      if (!user) {
+        return res.status(400).json({ message: "Invalid or expired reset link. Please request a new one." });
+      }
+      const hashed = await hashPassword(password);
+      await storage.updateUser(user.id, {
+        password: hashed,
+        resetPasswordToken: null,
+        resetPasswordExpiry: null,
+      });
+      res.json({ message: "Password reset successfully. You can now log in." });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: "Something went wrong" });
+    }
+  });
+
+  // === COURSES ===
   app.get(api.courses.list.path, async (req, res) => {
     const allCourses = await storage.getCourses();
     res.json(allCourses);
   });
 
+  // === LECTURERS ===
   app.get(api.lecturers.list.path, async (req, res) => {
     const allLecturers = await storage.getLecturers();
-    res.json(allLecturers);
+    const safe = allLecturers.map(({ password, verificationToken, resetPasswordToken, resetPasswordExpiry, ...rest }) => rest);
+    res.json(safe);
   });
 
+  // === EVALUATIONS ===
   app.get(api.evaluations.list.path, async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== 'student') {
       return res.status(401).json({ message: "Unauthorized" });
@@ -105,25 +199,19 @@ export async function registerRoutes(
     }
   });
 
+  // === LECTURER DASHBOARD ===
   app.get(api.dashboard.lecturerSummary.path, async (req, res) => {
     if (!req.isAuthenticated() || req.user.role !== 'lecturer') {
       return res.status(401).json({ message: "Unauthorized" });
     }
     const summary = await storage.getLecturerSummary(req.user.id);
-    
-    // Attach course info if they have one
     let courseInfo = undefined;
     if (req.user.courseId) {
       courseInfo = await storage.getCourse(req.user.courseId);
     }
-
-    res.json({
-      ...summary,
-      course: courseInfo
-    });
+    res.json({ ...summary, course: courseInfo });
   });
 
-  // Seed the DB if empty
   await seedDatabase();
 
   return httpServer;

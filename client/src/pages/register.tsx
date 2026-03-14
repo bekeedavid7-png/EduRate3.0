@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/hooks/use-auth";
 import { useCourses } from "@/hooks/use-courses";
 import { motion } from "framer-motion";
+import { Mail, CheckCircle2 } from "lucide-react";
 
 export default function Register() {
   const { register, isRegistering, user } = useAuth();
@@ -17,11 +18,13 @@ export default function Register() {
   const [role, setRole] = useState<'student' | 'lecturer'>('student');
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
   const [courseId, setCourseId] = useState("");
+  const [registered, setRegistered] = useState(false);
 
-  if (user) {
+  if (user && !registered) {
     setLocation(user.role === 'student' ? '/student' : '/lecturer');
     return null;
   }
@@ -38,20 +41,63 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await register({
-      username,
-      password,
-      role,
-      name,
-      department: role === 'lecturer' ? department : undefined,
-      courseId: role === 'lecturer' && courseId ? parseInt(courseId) : undefined,
-    });
+    try {
+      await register({
+        username,
+        password,
+        email,
+        role,
+        name,
+        department: role === 'lecturer' ? department : undefined,
+        courseId: role === 'lecturer' && courseId ? parseInt(courseId) : undefined,
+      });
+      setRegistered(true);
+    } catch {}
   };
+
+  if (registered) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center py-12">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md"
+          >
+            <div className="bg-white rounded-3xl shadow-2xl shadow-indigo-100/50 p-10 border border-slate-100 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="bg-indigo-100 p-4 rounded-full">
+                  <Mail className="w-10 h-10 text-indigo-600" />
+                </div>
+              </div>
+              <h2 className="text-2xl font-display font-bold text-slate-900 mb-2">Check your email</h2>
+              <p className="text-slate-500 mb-2">
+                We've sent a verification link to <span className="font-semibold text-slate-700">{email}</span>.
+              </p>
+              <p className="text-sm text-slate-400 mb-6">
+                Click the link in the email to verify your account. You can still use the app while unverified.
+              </p>
+              <div className="flex flex-col gap-3">
+                <Button
+                  onClick={() => setLocation(role === 'student' ? '/student' : '/lecturer')}
+                  className="w-full py-5 rounded-xl font-semibold bg-gradient-to-r from-primary to-indigo-600"
+                  data-testid="button-go-to-dashboard"
+                >
+                  Go to Dashboard
+                </Button>
+                <p className="text-xs text-slate-400">Didn't receive it? Check spam or <Link href="/login" className="text-primary hover:underline">sign in again</Link>.</p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
       <div className="flex items-center justify-center py-8">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-xl"
@@ -66,6 +112,7 @@ export default function Register() {
               <button
                 type="button"
                 onClick={() => setRole('student')}
+                data-testid="button-role-student"
                 className={`flex-1 py-3 text-sm font-semibold rounded-lg transition-all ${
                   role === 'student' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
@@ -75,6 +122,7 @@ export default function Register() {
               <button
                 type="button"
                 onClick={() => setRole('lecturer')}
+                data-testid="button-role-lecturer"
                 className={`flex-1 py-3 text-sm font-semibold rounded-lg transition-all ${
                   role === 'lecturer' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
@@ -87,30 +135,50 @@ export default function Register() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
-                  <Input 
+                  <Input
                     id="name" value={name} onChange={(e) => setName(e.target.value)} required
                     className="px-4 py-5 rounded-xl bg-slate-50/50" placeholder="Jane Doe"
+                    data-testid="input-name"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="username">Username</Label>
-                  <Input 
+                  <Input
                     id="username" value={username} onChange={(e) => setUsername(e.target.value)} required
                     className="px-4 py-5 rounded-xl bg-slate-50/50" placeholder="janedoe"
+                    data-testid="input-username"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="email">Email Address</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Input
+                    id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
+                    className="pl-10 py-5 rounded-xl bg-slate-50/50" placeholder="you@example.com"
+                    data-testid="input-email"
+                  />
+                </div>
+                <p className="text-xs text-slate-400 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                  Used for account verification and password reset
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input 
+                <Input
                   id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
-                  className="px-4 py-5 rounded-xl bg-slate-50/50" placeholder="••••••••"
+                  minLength={8}
+                  className="px-4 py-5 rounded-xl bg-slate-50/50" placeholder="Min. 8 characters"
+                  data-testid="input-password"
                 />
               </div>
 
               {role === 'lecturer' && (
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   className="space-y-5 pt-2 border-t border-slate-100"
@@ -118,7 +186,7 @@ export default function Register() {
                   <div className="space-y-2">
                     <Label>Department</Label>
                     <Select value={department} onValueChange={(val) => { setDepartment(val); setCourseId(""); }}>
-                      <SelectTrigger className="py-5 rounded-xl bg-slate-50/50">
+                      <SelectTrigger className="py-5 rounded-xl bg-slate-50/50" data-testid="select-department">
                         <SelectValue placeholder="Select your department" />
                       </SelectTrigger>
                       <SelectContent>
@@ -133,7 +201,7 @@ export default function Register() {
                     <div className="space-y-2">
                       <Label>Assigned Course</Label>
                       <Select value={courseId} onValueChange={setCourseId}>
-                        <SelectTrigger className="py-5 rounded-xl bg-slate-50/50">
+                        <SelectTrigger className="py-5 rounded-xl bg-slate-50/50" data-testid="select-course">
                           <SelectValue placeholder="Select the course you teach" />
                         </SelectTrigger>
                         <SelectContent>
@@ -149,9 +217,10 @@ export default function Register() {
                 </motion.div>
               )}
 
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 disabled={isRegistering || isLoadingCourses || (role === 'lecturer' && (!department || !courseId))}
+                data-testid="button-create-account"
                 className="w-full py-6 mt-4 rounded-xl text-md font-semibold bg-gradient-to-r from-primary to-indigo-600 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300"
               >
                 {isRegistering ? "Creating Account..." : "Create Account"}
@@ -160,7 +229,7 @@ export default function Register() {
 
             <div className="mt-8 text-center text-sm text-slate-500">
               Already have an account?{" "}
-              <Link href="/login" className="font-semibold text-primary hover:underline cursor-pointer">
+              <Link href="/login" className="font-semibold text-primary hover:underline cursor-pointer" data-testid="link-login">
                 Log in
               </Link>
             </div>

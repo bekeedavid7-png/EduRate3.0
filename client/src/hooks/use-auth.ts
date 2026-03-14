@@ -64,7 +64,6 @@ export function useAuth() {
     onSuccess: (data) => {
       queryClient.setQueryData([api.auth.me.path], data);
       toast({ title: "Account created!", description: `Welcome to EDURATE, ${data.name}!` });
-      setLocation(data.role === "student" ? "/student" : "/lecturer");
     },
     onError: (err: Error) => {
       toast({ variant: "destructive", title: "Registration Failed", description: err.message });

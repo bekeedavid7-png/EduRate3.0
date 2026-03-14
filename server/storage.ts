@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and, gt } from "drizzle-orm";
 import {
   users,
   courses,
@@ -14,7 +14,11 @@ import {
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByVerificationToken(token: string): Promise<User | undefined>;
+  getUserByResetToken(token: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, data: Partial<User>): Promise<User>;
   getCourses(): Promise<Course[]>;
   getCourse(id: number): Promise<Course | undefined>;
   getLecturers(): Promise<(User & { courseCode?: string, courseName?: string })[]>;
@@ -35,8 +39,36 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async getUserByVerificationToken(token: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.verificationToken, token));
+    return user;
+  }
+
+  async getUserByResetToken(token: string): Promise<User | undefined> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.resetPasswordToken, token),
+          gt(users.resetPasswordExpiry, new Date())
+        )
+      );
+    return user;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
+    return user;
+  }
+
+  async updateUser(id: number, data: Partial<User>): Promise<User> {
+    const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
     return user;
   }
 
@@ -95,16 +127,9 @@ export class DatabaseStorage implements IStorage {
       };
     }
 
-    let sumOverall = 0;
-    let sumClarity = 0;
-    let sumEngagement = 0;
-    let sumMaterials = 0;
-    let sumOrganization = 0;
-    let sumFeedback = 0;
-    let sumPace = 0;
-    let sumSupport = 0;
-    let sumFairness = 0;
-    let sumRelevance = 0;
+    let sumOverall = 0, sumClarity = 0, sumEngagement = 0, sumMaterials = 0;
+    let sumOrganization = 0, sumFeedback = 0, sumPace = 0, sumSupport = 0;
+    let sumFairness = 0, sumRelevance = 0;
     const dist = { excellent: 0, good: 0, average: 0, poor: 0 };
 
     for (const e of evals) {
