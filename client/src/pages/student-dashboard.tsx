@@ -19,21 +19,14 @@ export default function StudentDashboard() {
 
   const [filterDept, setFilterDept] = useState<string>("all");
 
-  if (isAuthLoading) return <LoadingDashboard />;
-  if (!user || user.role !== 'student') {
-    setLocation('/login');
-    return null;
-  }
-
-  const isLoading = isLoadingLecturers || isLoadingEvals || isLoadingCourses;
-
+  // ✅ All hooks before early returns
   const departments = useMemo(() => {
     if (!courses) return [];
     return Array.from(new Set(courses.map(c => c.department))).sort();
   }, [courses]);
 
   const { pending, completed } = useMemo(() => {
-    if (!lecturers || !evaluations) return { pending: [], completed: [] };
+    if (!lecturers || !evaluations || !user) return { pending: [], completed: [] };
 
     let filteredLecturers = lecturers;
     if (filterDept !== "all") {
@@ -44,7 +37,6 @@ export default function StudentDashboard() {
       l => !evaluations.some(e => e.lecturerId === l.id && e.studentId === user.id)
     );
 
-    // Completed needs to join with lecturer and course info
     const completedList = evaluations
       .filter(e => e.studentId === user.id)
       .map(e => {
@@ -60,7 +52,16 @@ export default function StudentDashboard() {
       .filter(e => filterDept === "all" || e.department === filterDept);
 
     return { pending: pendingList, completed: completedList };
-  }, [lecturers, evaluations, filterDept, user.id]);
+  }, [lecturers, evaluations, filterDept, user]);
+
+  // ✅ Early returns after all hooks
+  if (isAuthLoading) return <LoadingDashboard />;
+  if (!user || user.role !== 'student') {
+    setLocation('/login');
+    return null;
+  }
+
+  const isLoading = isLoadingLecturers || isLoadingEvals || isLoadingCourses;
 
   return (
     <Layout>

@@ -24,11 +24,7 @@ export default function Register() {
   const [courseId, setCourseId] = useState("");
   const [registered, setRegistered] = useState(false);
 
-  if (user && !registered) {
-    setLocation(user.role === 'student' ? '/student' : '/lecturer');
-    return null;
-  }
-
+  // ✅ All hooks before early returns
   const departments = useMemo(() => {
     if (!courses) return [];
     return Array.from(new Set(courses.map(c => c.department))).sort();
@@ -38,6 +34,12 @@ export default function Register() {
     if (!courses || !department) return [];
     return courses.filter(c => c.department === department);
   }, [courses, department]);
+
+  // ✅ Early returns after all hooks
+  if (user && !registered) {
+    setLocation(user.role === 'student' ? '/student' : '/lecturer');
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
